@@ -3,13 +3,18 @@
 #define INCLUDE_GAMEPAD_MODULE
 
 #include <Dabble.h>
+#include <Servo.h>
+
+// Setup Servo
+Servo driller;
 
 // Motor pins
 const int motor1a = 13;  // Left motor
 const int motor1b = 12;
 const int motor2a = 11;  // Right motor
 const int motor2b = 10;
-const int microbitPin = 9; 
+const int microbitPin = 9;
+int position=0
 
 void setup() {
   Dabble.begin(9600);
@@ -18,6 +23,7 @@ void setup() {
   pinMode(motor2a, OUTPUT);
   pinMode(motor2b, OUTPUT);  
   pinMode(microbitPin, INPUT); // Configured as input
+  driller.attach(8);
 }
 
 void loop() {
@@ -40,12 +46,14 @@ void loop() {
   else if (GamePad.isRightPressed()) {
     goRight();
   }
-  else {
+  else if (GamePad.isCrossPressed()) {
     stopMotors();
   }
-}
 
-// --- Movement Functions ---
+  if (GamePad.isSquarePressed()) {
+    servoDrill();
+  }
+}
 
 void goForward() {
   digitalWrite(motor1a, HIGH);
@@ -80,4 +88,8 @@ void stopMotors() {
   digitalWrite(motor1b, LOW);
   digitalWrite(motor2a, LOW);
   digitalWrite(motor2b, LOW);
+}
+
+void servoDrill() {
+  driller.write()
 }
