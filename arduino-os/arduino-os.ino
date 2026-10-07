@@ -46,7 +46,7 @@ const byte moistureServoPin = 5;
 // =====================================================
 
 const int DRILL_START_ANGLE = 0;
-const int DRILL_END_ANGLE   = 40;
+const int DRILL_END_ANGLE   = 180;
 
 const int MOISTURE_UP_ANGLE   = 0;
 const int MOISTURE_DOWN_ANGLE = 90;
@@ -158,8 +158,6 @@ void loop() {
 
   }
   else {
-
-    // Stop when no directional button is pressed.
     stopMotors();
   }
 
@@ -170,7 +168,6 @@ void loop() {
 
   if (GamePad.isStartPressed()) {
 
-    stopMotors();
   }
 
 
