@@ -9,7 +9,6 @@ const byte motor1b = 12;
 const byte motor2a = 11;
 const byte motor2b = 10;
 
-const byte microbitPin = 9;
 const byte drillerPin = 6;
 const byte moistureServoPin = 5;
 
@@ -18,7 +17,7 @@ const byte WARNING_RIGHT = 8;
 const byte BRAKE_LIGHTS = 9;
 
 const int DRILL_START_ANGLE = 0;
-const int DRILL_END_ANGLE = 180;
+const int DRILL_END_ANGLE = 130;
 const int MOISTURE_UP_ANGLE = 0;
 const int MOISTURE_DOWN_ANGLE = 90;
 
@@ -68,7 +67,6 @@ void setup() {
   pinMode(motor2a, OUTPUT);
   pinMode(motor2b, OUTPUT);
 
-  pinMode(microbitPin, INPUT);
   pinMode(WARNING_LEFT, OUTPUT);
   pinMode(WARNING_RIGHT, OUTPUT);
   pinMode(BRAKE_LIGHTS, OUTPUT);
@@ -87,7 +85,6 @@ void setup() {
 
 void loop() {
   Dabble.processInput();
-  analogWrite(BRAKE_LIGHTS, 100);
 
   bool crossPressed = GamePad.isCrossPressed();
   if (crossPressed && !crossWasPressed) {
@@ -105,16 +102,16 @@ void loop() {
     stopMotors();
   } else if (GamePad.isUpPressed()) {
     goForward();
-    digitalWrite(BRAKE_LIGHTS, 30);
+    digitalWrite(BRAKE_LIGHTS, LOW);
   } else if (GamePad.isDownPressed()) {
     goBackward();
-    digitalWrite(BRAKE_LIGHTS, 30);
+    digitalWrite(BRAKE_LIGHTS, LOW);
   } else if (GamePad.isLeftPressed()) {
     goLeft();
-    digitalWrite(BRAKE_LIGHTS, 30);
+    digitalWrite(BRAKE_LIGHTS, LOW);
   } else if (GamePad.isRightPressed()) {
     goRight();
-    digitalWrite(BRAKE_LIGHTS, 30);
+    analogWrite(BRAKE_LIGHTS, LOW);
   } else {
     stopMotors();
   }
