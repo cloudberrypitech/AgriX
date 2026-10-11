@@ -21,7 +21,7 @@ const int DRILL_START_ANGLE = 0;
 const int DRILL_END_ANGLE = 130;
 const unsigned long SERVO_STEP_TIME = 15;
 const unsigned long WARNING_BLINK_INTERVAL = 500;
-const int MOISTURE_THRESHOLD = 1200;
+const int MOISTURE_THRESHOLD = 400;
 const unsigned long SOW_INTERVAL = 2000;       // 5 seconds between drill cycles
 const unsigned long MOISTURE_INTERVAL = 2000;   // Check moisture every 2 seconds
 
@@ -94,10 +94,10 @@ void loop() {
   unsigned long currentMillis = millis();
 
   // Periodic Soil Check (Every 2 seconds)
-  if (currentMillis - lastMoistureCheck >= MOISTURE_INTERVAL) {
-    lastMoistureCheck = currentMillis;
-    checkMoisture();
-  }
+  //if (currentMillis - lastMoistureCheck >= MOISTURE_INTERVAL) {
+    //lastMoistureCheck = currentMillis;
+    //checkMoisture();
+  //}
 
   // Cross Button Toggle Logic for Hazard Lights
   bool crossPressed = GamePad.isCrossPressed();
