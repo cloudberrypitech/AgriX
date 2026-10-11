@@ -4,234 +4,193 @@
 #include <Dabble.h>
 #include <Servo.h>
 
-const byte motor1a = 13;
-const byte motor1b = 12;
-const byte motor2a = 11;
-const byte motor2b = 10;
-
-const byte drillerPin = 6;
-const byte moistureServoPin = 5;
-
+// Pin Configurations
+const byte MOTOR1A = 13;
+const byte MOTOR1B = 12;
+const byte MOTOR2A = 11;
+const byte MOTOR2B = 10;
 const byte WARNING_LEFT = 4;
 const byte WARNING_RIGHT = 8;
 const byte BRAKE_LIGHTS = 9;
+const int drill = 6;
+const int moistureSensor = A0;
+const byte PIN_7 = 7; 
 
+// Timing and Threshold Constants
 const int DRILL_START_ANGLE = 0;
 const int DRILL_END_ANGLE = 130;
-const int MOISTURE_UP_ANGLE = 0;
-const int MOISTURE_DOWN_ANGLE = 90;
-
 const unsigned long SERVO_STEP_TIME = 15;
 const unsigned long WARNING_BLINK_INTERVAL = 500;
+const int MOISTURE_THRESHOLD = 1200;
+const unsigned long SOW_INTERVAL = 2000;       // 5 seconds between drill cycles
+const unsigned long MOISTURE_INTERVAL = 2000;   // Check moisture every 2 seconds
 
-Servo driller;
-Servo moisture_sensor;
-
-enum DrillState {
-  DRILL_IDLE,
-  MOISTURE_DOWN,
-  DRILL_DOWN,
-  DRILL_UP,
-  MOISTURE_UP
-};
-
-DrillState drillState = DRILL_IDLE;
-
-int position = 0;
-int moistpos = 0;
-
-unsigned long lastServoMove = 0;
-unsigned long lastWarningBlink = 0;
-
+// Global System States
+bool readyToRun = false;
+bool movingForward = false;
 bool lamp = false;
 bool warningLightState = false;
 bool previousLampState = false;
-bool selectWasPressed = false;
 bool crossWasPressed = false;
+
+// Non-blocking Timing Control Variables
+unsigned long lastWarningBlink = 0;
+unsigned long lastSowTime = 0;
+unsigned long lastMoistureCheck = 0;
+unsigned long lastServoStep = 0;
+
+// Servo Sweep State Machine Variables
+enum DrillState { IDLE, MOVING_DOWN, WAITING_AT_BOTTOM, MOVING_UP };
+DrillState currentDrillState = IDLE;
+int currentServoPos = DRILL_START_ANGLE;
+unsigned long drillWaitStartTime = 0;
+bool sowCycleActive = false; // Tracks if a drilling process is currently running
+
+Servo driller; 
 
 void goForward();
 void goBackward();
 void goLeft();
 void goRight();
 void stopMotors();
-void startDrillingSequence();
-void updateDrillingSequence();
 void warningLamps();
+void checkMoisture();
+void sweepServoNonBlocking();
 
 void setup() {
   Serial.begin(9600);
   Dabble.begin(9600);
 
-  pinMode(motor1a, OUTPUT);
-  pinMode(motor1b, OUTPUT);
-  pinMode(motor2a, OUTPUT);
-  pinMode(motor2b, OUTPUT);
+  pinMode(MOTOR1A, OUTPUT);
+  pinMode(MOTOR1B, OUTPUT);
+  pinMode(MOTOR2A, OUTPUT);
+  pinMode(MOTOR2B, OUTPUT);
 
   pinMode(WARNING_LEFT, OUTPUT);
   pinMode(WARNING_RIGHT, OUTPUT);
   pinMode(BRAKE_LIGHTS, OUTPUT);
-
-  driller.attach(drillerPin);
-  moisture_sensor.attach(moistureServoPin);
-
-  driller.write(DRILL_START_ANGLE);
-  moisture_sensor.write(MOISTURE_UP_ANGLE);
+  pinMode(PIN_7, OUTPUT);
+  
+  pinMode(moistureSensor, INPUT);
 
   stopMotors();
 
-  Serial.println("AgriX started.");
-  Serial.println("Waiting for Dabble / HC-05...");
+  Serial.println(F("AgriX:: Moisture sensing seed system started."));
+  Serial.println(F("Waiting for Dabble / HC-05..."));
+
+  digitalWrite(PIN_7, HIGH);
+
+  // Attach global instance
+  driller.attach(drill);
+  driller.write(DRILL_START_ANGLE);
+
+  // Initial check
+  checkMoisture();
+  lastSowTime = millis();
 }
 
 void loop() {
   Dabble.processInput();
+  unsigned long currentMillis = millis();
 
+  // Periodic Soil Check (Every 2 seconds)
+  if (currentMillis - lastMoistureCheck >= MOISTURE_INTERVAL) {
+    lastMoistureCheck = currentMillis;
+    checkMoisture();
+  }
+
+  // Cross Button Toggle Logic for Hazard Lights
   bool crossPressed = GamePad.isCrossPressed();
   if (crossPressed && !crossWasPressed) {
     lamp = !lamp;
   }
   crossWasPressed = crossPressed;
 
-  bool selectPressed = GamePad.isSelectPressed();
-  if (selectPressed && !selectWasPressed && drillState == DRILL_IDLE) {
-    startDrillingSequence();
-  }
-  selectWasPressed = selectPressed;
-
-  if (drillState != DRILL_IDLE || GamePad.isStartPressed()) {
-    stopMotors();
-  } else if (GamePad.isUpPressed()) {
-    goForward();
-    digitalWrite(BRAKE_LIGHTS, LOW);
-  } else if (GamePad.isDownPressed()) {
-    goBackward();
-    digitalWrite(BRAKE_LIGHTS, LOW);
-  } else if (GamePad.isLeftPressed()) {
-    goLeft();
-    digitalWrite(BRAKE_LIGHTS, LOW);
-  } else if (GamePad.isRightPressed()) {
-    goRight();
-    analogWrite(BRAKE_LIGHTS, LOW);
+  // Run Robot Movement Controls only if Soil is "Ready"
+  if (readyToRun) {
+    movingForward = false;
+    
+    // Check if a drilling cycle is active
+    if (sowCycleActive) {
+      // Force motors to stop so the robot stands still while drilling
+      stopMotors();
+    } else {
+      // Normal driving controls when NOT drilling
+      if (GamePad.isStartPressed()) {
+        stopMotors();
+      } else if (GamePad.isUpPressed()) {
+        goForward();
+        movingForward = true;
+        digitalWrite(BRAKE_LIGHTS, LOW);
+      } else if (GamePad.isDownPressed()) {
+        goBackward();
+        digitalWrite(BRAKE_LIGHTS, LOW);
+      } else if (GamePad.isLeftPressed()) {
+        goLeft();
+        digitalWrite(BRAKE_LIGHTS, LOW);
+      } else if (GamePad.isRightPressed()) {
+        goRight();
+        digitalWrite(BRAKE_LIGHTS, LOW); 
+      } else {
+        stopMotors();
+      }
+    }
+    
+    sweepServoNonBlocking();
+    warningLamps();
+    
   } else {
+    // If soil condition changes or not ready, halt all operations safely
     stopMotors();
   }
-
-  updateDrillingSequence();
-  warningLamps();
 }
 
 void goForward() {
-  digitalWrite(motor1a, HIGH);
-  digitalWrite(motor1b, LOW);
-  digitalWrite(motor2a, HIGH);
-  digitalWrite(motor2b, LOW);
+  digitalWrite(MOTOR1A, HIGH);
+  digitalWrite(MOTOR1B, LOW);
+  digitalWrite(MOTOR2A, HIGH);
+  digitalWrite(MOTOR2B, LOW);
 }
 
 void goBackward() {
-  digitalWrite(motor1a, LOW);
-  digitalWrite(motor1b, HIGH);
-  digitalWrite(motor2a, LOW);
-  digitalWrite(motor2b, HIGH);
+  digitalWrite(MOTOR1A, LOW);
+  digitalWrite(MOTOR1B, HIGH);
+  digitalWrite(MOTOR2A, LOW);
+  digitalWrite(MOTOR2B, HIGH);
 }
 
 void goLeft() {
-  digitalWrite(motor1a, HIGH);
-  digitalWrite(motor1b, LOW);
-  digitalWrite(motor2a, LOW);
-  digitalWrite(motor2b, HIGH);
+  digitalWrite(MOTOR1A, HIGH);
+  digitalWrite(MOTOR1B, LOW);
+  digitalWrite(MOTOR2A, LOW);
+  digitalWrite(MOTOR2B, HIGH);
 }
 
 void goRight() {
-  digitalWrite(motor1a, LOW);
-  digitalWrite(motor1b, HIGH);
-  digitalWrite(motor2a, HIGH);
-  digitalWrite(motor2b, LOW);
+  digitalWrite(MOTOR1A, LOW);
+  digitalWrite(MOTOR1B, HIGH);
+  digitalWrite(MOTOR2A, HIGH);
+  digitalWrite(MOTOR2B, LOW);
 }
 
 void stopMotors() {
-  digitalWrite(motor1a, LOW);
-  digitalWrite(motor1b, LOW);
-  digitalWrite(motor2a, LOW);
-  digitalWrite(motor2b, LOW);
+  digitalWrite(MOTOR1A, LOW);
+  digitalWrite(MOTOR1B, LOW);
+  digitalWrite(MOTOR2A, LOW);
+  digitalWrite(MOTOR2B, LOW);
   digitalWrite(BRAKE_LIGHTS, HIGH);
 }
 
-void startDrillingSequence() {
-  stopMotors();
-
-  Serial.println("Drilling sequence started.");
-
-  position = DRILL_START_ANGLE;
-  moistpos = MOISTURE_UP_ANGLE;
-  drillState = MOISTURE_DOWN;
-  lastServoMove = millis();
-}
-
-void updateDrillingSequence() {
-  if (drillState == DRILL_IDLE) {
-    return;
-  }
-
-  if (millis() - lastServoMove < SERVO_STEP_TIME) {
-    return;
-  }
-
-  lastServoMove = millis();
-
-  if (drillState == MOISTURE_DOWN) {
-    moisture_sensor.write(moistpos);
-    moistpos++;
-
-    if (moistpos > MOISTURE_DOWN_ANGLE) {
-      position = DRILL_START_ANGLE;
-      drillState = DRILL_DOWN;
-    }
-    return;
-  }
-
-  if (drillState == DRILL_DOWN) {
-    driller.write(position);
-    position++;
-
-    if (position > DRILL_END_ANGLE) {
-      position = DRILL_END_ANGLE;
-      drillState = DRILL_UP;
-    }
-    return;
-  }
-
-  if (drillState == DRILL_UP) {
-    driller.write(position);
-    position--;
-
-    if (position < DRILL_START_ANGLE) {
-      position = DRILL_START_ANGLE;
-      drillState = MOISTURE_UP;
-    }
-    return;
-  }
-
-  if (drillState == MOISTURE_UP) {
-    moisture_sensor.write(moistpos);
-    moistpos--;
-
-    if (moistpos < MOISTURE_UP_ANGLE) {
-      moistpos = MOISTURE_UP_ANGLE;
-      moisture_sensor.write(moistpos);
-      drillState = DRILL_IDLE;
-      Serial.println("Drilling sequence complete.");
-    }
-  }
-}
-
 void warningLamps() {
+  unsigned long currentMillis = millis();
+  
   if (lamp && !previousLampState) {
     warningLightState = true;
-    lastWarningBlink = millis();
+    lastWarningBlink = currentMillis;
   }
 
-  if (lamp && millis() - lastWarningBlink >= WARNING_BLINK_INTERVAL) {
-    lastWarningBlink = millis();
+  if (lamp && (currentMillis - lastWarningBlink >= WARNING_BLINK_INTERVAL)) {
+    lastWarningBlink = currentMillis;
     warningLightState = !warningLightState;
   }
 
@@ -243,4 +202,70 @@ void warningLamps() {
 
   digitalWrite(WARNING_LEFT, warningLightState ? HIGH : LOW);
   digitalWrite(WARNING_RIGHT, warningLightState ? HIGH : LOW);
+}
+
+void checkMoisture() {
+  int moisture = analogRead(moistureSensor);
+  Serial.print(F("Moisture Level: "));
+  Serial.println(moisture);
+  
+  if (moisture < MOISTURE_THRESHOLD) {
+    if (!readyToRun) Serial.println(F("Status: Ready to Run"));
+    readyToRun = true;
+  } else {
+    if (readyToRun) Serial.println(F("Status: Soil wet/wrong threshold - Stopped"));
+    readyToRun = false;
+  }
+}
+
+void sweepServoNonBlocking() {
+  unsigned long currentMillis = millis();
+
+  switch (currentDrillState) {
+    case IDLE:
+      // Trigger new sow cycle if moving forward AND time interval has passed
+      if (movingForward && (currentMillis - lastSowTime >= SOW_INTERVAL)) {
+        Serial.println(F("Time to Sow - Lowering Drill..."));
+        currentDrillState = MOVING_DOWN;
+        sowCycleActive = true; // Lock the cycle so it finishes automatically
+        lastServoStep = currentMillis;
+      }
+      break;
+
+    case MOVING_DOWN:
+      if (currentMillis - lastServoStep >= SERVO_STEP_TIME) {
+        lastServoStep = currentMillis;
+        currentServoPos++;
+        driller.write(currentServoPos);
+        
+        if (currentServoPos >= DRILL_END_ANGLE) {
+          currentDrillState = WAITING_AT_BOTTOM;
+          drillWaitStartTime = currentMillis;
+        }
+      }
+      break;
+
+    case WAITING_AT_BOTTOM:
+      // Hold at bottom position for 1 second
+      if (currentMillis - drillWaitStartTime >= 1000) {
+        currentDrillState = MOVING_UP;
+        lastServoStep = currentMillis;
+      }
+      break;
+
+    case MOVING_UP:
+      if (currentMillis - lastServoStep >= SERVO_STEP_TIME) {
+        lastServoStep = currentMillis;
+        currentServoPos--;
+        driller.write(currentServoPos);
+        
+        if (currentServoPos <= DRILL_START_ANGLE) {
+          Serial.println(F("Sow Cycle Complete. Resuming Drive Mode."));
+          currentDrillState = IDLE;
+          sowCycleActive = false;       // Release the lock so you can drive again
+          lastSowTime = currentMillis;   // Reset the 5-second interval clock
+        }
+      }
+      break;
+  }
 }
