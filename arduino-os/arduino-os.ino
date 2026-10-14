@@ -161,11 +161,15 @@ void processTerminalCommands() {
     if (input.equalsIgnoreCase("status")) {
       int currentMoisture = analogRead(moistureSensor);
       
+      // Live evaluation for the text status report
+      String liveStatus = (currentMoisture < moistureThreshold) ? "Ready to Run" : "Stopped (Soil wet/exceeds threshold)";
+      
       String statusMessage = "\n====================\n"
                              "SYSTEM STATUS REPORT\n"
                              "====================\n"
-                             "Machine State: " + String(readyToRun ? "Ready to Run" : "Stopped (Check Soil/Threshold)") + "\n"
-                             "Soil Moisture (at Start): " + String(currentMoisture) + "\n"
+                             "Live Soil Status: " + liveStatus + "\n"
+                             "Motor Block State: " + String(readyToRun ? "Enabled (Passed Boot Check)" : "Disabled (Failed Boot Check)") + "\n"
+                             "Soil Moisture: " + String(currentMoisture) + "\n"
                              "Current Threshold: " + String(moistureThreshold) + "\n"
                              "====================\n";
       
