@@ -156,7 +156,8 @@ void loop() {
 void processTerminalCommands() {
   if (Terminal.available()) {
     String input = Terminal.readString();
-    input.trim(); 
+    input.trim();
+    input.toLowerCase();
 
     if (input.equalsIgnoreCase("status")) {
       int currentMoisture = analogRead(moistureSensor);
@@ -175,7 +176,7 @@ void processTerminalCommands() {
       
       Terminal.print(statusMessage);
     } 
-    else if (input.startsWith("change moisture threshold ")) {
+    else if (input.startsWith("set threshold ")) {
       String valStr = input.substring(26);
       valStr.trim();
       int newValue = valStr.toInt();
@@ -194,6 +195,16 @@ void processTerminalCommands() {
       } else {
         Terminal.println("Invalid threshold value!");
       }
+    }
+    else {
+      helpMessage =   "\n====================\n"
+                      "SYSTEM COMMANDS\n"
+                      "====================\n"
+                      "1. `status`: Display the current status of the machine."
+                      "2. `set threshold` : Set the moisture threshold to a specific value. Which when exceeded will freeze the machine.\n"
+                      "====================\n";
+
+      Terminal.println()
     }
   }
 }
